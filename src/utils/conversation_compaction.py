@@ -63,6 +63,7 @@ from models.common.responses.types import ResponseInput
 from models.common.turn_summary import ContextStatus
 from models.compaction import ConversationSummary
 from models.config import CompactionConfiguration, InferenceConfiguration
+from utils.blocked_turns import exclude_blocked_items, is_blocked_item
 from utils.compaction import (
     CallCounter,
     partition_conversation,
@@ -83,6 +84,7 @@ from utils.token_estimator import (
     extract_message_text,
     is_message_item,
 )
+from utils.types import TextRedactor
 
 logger = get_logger(__name__)
 
@@ -187,7 +189,7 @@ class CompactionResult:
             or the cache), so the ``conversation`` parameter is omitted. This is
             True whether the summary was created this request or reused from a
             prior one. Drives ``context_status``.
-        original_input: The new user query exactly as it arrived (before the
+        original_input: The new user query after redaction, if any (before the
             explicit-input rewrite). Populated only in compacted mode (where
             ``compacted`` is True); ``None`` otherwise. In compacted mode the
             caller hands it to ``utils.pending_turn.PendingTurn``, which
@@ -214,8 +216,13 @@ class CompactionResult:
 
 
 def is_marker_item(item: Any) -> bool:
-    """Return True when *item* is a compaction summary marker message."""
-    if not is_message_item(item):
+    """Return True when *item* is a compaction summary marker message.
+
+    A message of a turn a shield blocked is never a marker, whatever its
+    text: a marker is read back as a summary and sets the boundary of the
+    recent turns (LCORE-3788).
+    """
+    if not is_message_item(item) or is_blocked_item(item):
         return False
     return extract_message_text(item).startswith(MARKER_SENTINEL)
 
@@ -339,7 +346,8 @@ def exclude_marker_items(items: Sequence[Any]) -> list[Any]:
     are recognized as well and no migration is needed. Markers are only ever
     written as user messages, so a message of any other role is kept even when
     its text starts with the sentinel. A message the user typed with the
-    sentinel at its start cannot be told apart from a marker and is left out.
+    sentinel at its start cannot be told apart from a marker and is left out,
+    unless it carries the blocked mark (:func:`is_marker_item`).
 
     Parameters:
         items: Conversation items, as stored.
@@ -446,6 +454,33 @@ def _query_input_message(original_input: ResponseInput) -> list[Any]:
     if isinstance(original_input, str):
         return [OpenAIResponseMessage(role="user", content=original_input)]
     return list(original_input)
+
+
+def _redact_user_messages(
+    items: list[Any], redact: Optional[TextRedactor]
+) -> list[Any]:
+    """Return conversation items with the text of their user messages redacted.
+
+    User messages are the ones :func:`_verbatim_input_message` replays with
+    the user role; other messages are left as stored, as the redaction
+    capability leaves them. A message the redaction changes is replaced by a
+    text-only copy and every other item is the object that was passed in, so
+    the stored conversation is not rewritten. Without a redaction the items
+    are returned as they are.
+    """
+    if redact is None:
+        return items
+    redacted_items: list[Any] = []
+    for item in items:
+        replacement = item
+        role = getattr(item, "role", "user")
+        if is_message_item(item) and role not in ("system", "developer", "assistant"):
+            text = extract_message_text(item)
+            redacted_text = redact(text)
+            if redacted_text != text:
+                replacement = OpenAIResponseMessage(role="user", content=redacted_text)
+        redacted_items.append(replacement)
+    return redacted_items
 
 
 def _build_explicit_input(
@@ -595,6 +630,10 @@ def _load_compaction_state(
     configured. The recent-verbatim boundary is always derived from marker
     position in the conversation items.
 
+    Turns a shield blocked are left out of the recent items, after the
+    boundary was applied to the stored items: they are neither estimated,
+    summarized nor replayed (LCORE-3788).
+
     Returns ``(summaries, cached_summaries, recent_items)``.
     """
     cached_summaries = _read_cached_summaries(
@@ -605,7 +644,7 @@ def _load_compaction_state(
         if cached_summaries
         else _marker_summaries(items)
     )
-    recent_items = _items_after_last_marker(items)
+    recent_items = exclude_blocked_items(_items_after_last_marker(items))
     return summaries, cached_summaries, recent_items
 
 
@@ -718,6 +757,7 @@ async def apply_compaction(  # pylint: disable=too-many-arguments,too-many-posit
     compaction_config: CompactionConfiguration,
     emit_events: bool = False,
     encoding_name: str = DEFAULT_ENCODING_NAME,
+    redact: Optional[TextRedactor] = None,
     cache: Optional[Cache] = None,
     user_id: str = "",
     skip_user_id_check: bool = False,
@@ -744,6 +784,13 @@ async def apply_compaction(  # pylint: disable=too-many-arguments,too-many-posit
         compaction_config: Compaction tuning (enabled, threshold, buffer, ...).
         emit_events: Whether to yield CompactionStartedEvent before summarizing.
         encoding_name: tiktoken encoding name for estimation/summarization.
+        redact: The redaction of the shields the request selects
+            (``utils.shields.request_redactor``), or ``None``. It is applied
+            to the new query, so that a compacted turn sends and stores the
+            text the redaction capability sends outside compacted mode. It
+            is also applied to the summaries and the user turns replayed from
+            the conversation and to the user turns handed to the summarizer,
+            which may have been stored unredacted.
         cache: Conversation cache, the preferred summary store and the home of
             the persisted recursive fold. ``None`` (or a non-persisting backend)
             falls back to marker-only summaries with no folding.
@@ -784,6 +831,10 @@ async def apply_compaction(  # pylint: disable=too-many-arguments,too-many-posit
         summaries, cached_summaries, recent_items = _load_compaction_state(
             items, cache, user_id, conversation_id, skip_user_id_check
         )
+        # An item list (the /v1/responses form) is left alone: that endpoint
+        # passes no redaction.
+        if redact is not None and isinstance(original_input, str):
+            original_input = redact(original_input)
 
         context_window = resolve_context_window(model, inference_config)
         estimated = _estimate_total_tokens(
@@ -807,7 +858,7 @@ async def apply_compaction(  # pylint: disable=too-many-arguments,too-many-posit
                 summary = await summarize_chunk(
                     client,
                     model,
-                    old_items,
+                    _redact_user_messages(old_items, redact),
                     summarized_through_turn=_covered_item_count(items, keep_items),
                     encoding_name=encoding_name,
                     count_call=calls.count,
@@ -844,6 +895,13 @@ async def apply_compaction(  # pylint: disable=too-many-arguments,too-many-posit
             yield CompactionResult(params, compacted=False)
             return
 
+        if redact is not None:
+            # Summaries and replayed user turns go out as user messages and may
+            # have been stored unredacted. Not earlier: the kept turns are found
+            # among the stored items by identity (_covered_item_count).
+            summaries = [redact(text) for text in summaries]
+            recent_items = _redact_user_messages(recent_items, redact)
+
         # Compacted mode: lightspeed owns the context. Build explicit input and
         # stop passing the conversation parameter to inference.
         yield _compacted_result(
@@ -857,6 +915,7 @@ async def apply_compaction_blocking(  # pylint: disable=too-many-arguments,too-m
     inference_config: InferenceConfiguration,
     compaction_config: CompactionConfiguration,
     encoding_name: str = DEFAULT_ENCODING_NAME,
+    redact: Optional[TextRedactor] = None,
     cache: Optional[Cache] = None,
     user_id: str = "",
     skip_user_id_check: bool = False,
@@ -878,6 +937,7 @@ async def apply_compaction_blocking(  # pylint: disable=too-many-arguments,too-m
         compaction_config,
         emit_events=False,
         encoding_name=encoding_name,
+        redact=redact,
         cache=cache,
         user_id=user_id,
         skip_user_id_check=skip_user_id_check,
@@ -927,6 +987,8 @@ async def needs_compaction_path(
         return True
     context_window = resolve_context_window(params.model, inference_config)
     estimated = estimate_tokens(params.instructions or "", encoding_name)
-    estimated += estimate_conversation_tokens(items, encoding_name=encoding_name)
+    estimated += estimate_conversation_tokens(
+        exclude_blocked_items(items), encoding_name=encoding_name
+    )
     estimated += _estimate_response_input_tokens(params.input, encoding_name)
     return _should_compact(estimated, context_window, compaction_config)

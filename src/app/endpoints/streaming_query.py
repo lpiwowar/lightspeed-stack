@@ -78,12 +78,13 @@ from utils.query import (
     validate_model_provider_override,
 )
 from utils.quota_utils import check_tokens_available
+from utils.rag.vector_search import build_rag_context
 from utils.responses import (
     deduplicate_referenced_documents,
     extract_vector_store_ids_from_tools,
     prepare_responses_params,
 )
-from utils.shields import validate_shield_ids_override
+from utils.shields import request_redactor, validate_shield_ids_override
 from utils.streaming_sse import (
     http_exception_stream_event,
     stream_compaction_event,
@@ -93,7 +94,6 @@ from utils.streaming_sse import (
 from utils.suid import get_suid, normalize_conversation_id
 from utils.token_counter import TokenCounter
 from utils.types import Responses
-from utils.vector_search import build_rag_context
 
 if TYPE_CHECKING:
     from models.common.turn_summary import ContextStatus
@@ -435,6 +435,9 @@ async def generate_response_with_compaction(
                 configuration.inference,
                 configuration.compaction,
                 emit_events=True,
+                redact=request_redactor(
+                    configuration.shields, context.query_request.shield_ids
+                ),
                 cache=configured_conversation_cache(),
                 user_id=context.user_id,
                 skip_user_id_check=context.skip_userid_check,

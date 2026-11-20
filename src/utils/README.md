@@ -40,10 +40,6 @@ Runtime integration of conversation compaction into the request flow.
 
 Utilities for conversations.
 
-## [degraded_mode.py](degraded_mode.py)
-
-Degraded mode state tracking.
-
 ## [endpoints.py](endpoints.py)
 
 Utility functions for endpoint handlers.
@@ -96,10 +92,6 @@ Utility functions for working with queries.
 
 Quota handling helper functions.
 
-## [reranker.py](reranker.py)
-
-Reranker utilities for RAG chunk reranking.
-
 ## [responses.py](responses.py)
 
 Utility functions for processing Responses API output.
@@ -147,8 +139,4 @@ Utility functions for formatting and parsing MCP tool descriptions.
 ## [types.py](types.py)
 
 Common types for the project.
-
-## [vector_search.py](vector_search.py)
-
-Vector search utilities for query endpoints.
 

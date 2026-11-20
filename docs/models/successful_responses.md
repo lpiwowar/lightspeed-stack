@@ -93,6 +93,29 @@ Note: this is not a real model, just an enumeration of all action names.
 
 
 
+## AgentStepPersistenceNoopConfiguration
+
+
+Agent step persistence disabled (no harness store).
+
+
+| Field | Type | Description |
+|-------|------|-------------|
+| type | string |  |
+
+
+## AgentStepPersistenceSqliteConfiguration
+
+
+SQLite-backed harness step store.
+
+
+| Field | Type | Description |
+|-------|------|-------------|
+| type | string |  |
+| sqlite |  | SQLite file for harness step persistence. |
+
+
 ## AllowedModel
 
 
@@ -454,6 +477,7 @@ Global service configuration.
 | customization |  | It is possible to customize Lightspeed Core Stack via this section. System prompt can be customized and also different parts of the service can be replaced by custom Python modules. |
 | inference |  | One LLM provider and one its model might be selected as default ones. When no provider+model pair is specified in REST API calls (query endpoints), the default provider and model are used. |
 | conversation_cache |  |  |
+| agent_step_persistence |  | Pydantic AI harness StepPersistence storage for agent run history. |
 | compaction |  | Controls when conversation history is summarized to keep the model's input below the context window limit. Disabled by default — when disabled, requests that exceed the window continue to surface as HTTP 413. |
 | approvals |  | Settings for human-in-the-loop approval of MCP tool invocations |
 | vector_store |  | Dynamic vector-store provider capacity for runtime POST /v1/vector-stores creates. Not the same as rag.byok.stores (static registered corpora). When providers is non-empty, default_provider is required and must match one of providers[].id. Applied in unified synthesis only. |
@@ -837,7 +861,6 @@ This enum serves two purposes:
 
 2. Service-level health (overall LCORE status):
    - HEALTHY: All systems operational, LLS connected, all providers healthy
-   - DEGRADED: Service running with reduced functionality (e.g., LLS unavailable)
    - UNHEALTHY: Service connected but one or more providers are unhealthy
 
 
@@ -1187,7 +1210,6 @@ Useful resources:
 | timeout | integer | Timeout in seconds for requests to OGX service. Default is 180 seconds (3 minutes) to accommodate long-running RAG queries. |
 | max_retries | integer | Maximum number of connection attempts before giving up. Used on startup to connect to OGX and retrieve its version. Connection attempts are retried with a fixed delay to handle the case where OGX is still starting up (e.g., when running as a sidecar in the same pod). |
 | retry_delay | integer | Delay in seconds between retry attempts. Used on startup to connect to OGX and retrieve its version. Connection attempts are retried with a fixed delay to handle the case where OGX is still starting up (e.g., when running as a sidecar in the same pod). |
-| allow_degraded_mode | boolean | If enabled, Lightspeed Core can be started even when OGX is not accessible (valid for server mode only) |
 | config |  | Backend-specific knobs for unified mode, where LCORE synthesizes the OGX run.yaml instead of reading an external file. Holds the baseline selector, an optional profile path, and a raw native_override escape hatch. Backend-agnostic high-level sections (e.g. inference.providers) live at the configuration root, not here. Mutually exclusive with library_client_config_path; that cross-field check lives on the root Configuration model. When set in library mode, library_client_config_path is not required. |
 
 
@@ -2287,8 +2309,8 @@ Model representing response to a readiness request.
 Attributes:
     ready: If service is ready to handle requests.
     reason: The reason for the readiness status.
-    overall_status: Overall service health status (healthy/degraded/unhealthy).
-    impacts: Optional list of functional impacts when degraded or unhealthy.
+    overall_status: Overall service health status (healthy/unhealthy).
+    impacts: Optional list of functional impacts when unhealthy.
     providers: List of unhealthy providers (empty when all healthy).
 
 
@@ -2297,7 +2319,7 @@ Attributes:
 | ready | boolean | Flag indicating if service is ready to handle requests |
 | reason | string | The reason for the readiness status |
 | overall_status |  | Overall service health status |
-| impacts | array | List of functional impacts when service is degraded or unhealthy |
+| impacts | array | List of functional impacts when service is unhealthy |
 | providers | array | List of unhealthy providers (empty when all healthy) |
 
 

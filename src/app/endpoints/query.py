@@ -57,15 +57,15 @@ from utils.query import (
     validate_model_provider_override,
 )
 from utils.quota_utils import check_tokens_available, get_available_quotas
+from utils.rag.vector_search import build_rag_context
 from utils.responses import (
     deduplicate_referenced_documents,
     maybe_get_topic_summary,
     prepare_responses_params,
 )
-from utils.shields import validate_shield_ids_override
+from utils.shields import request_redactor, validate_shield_ids_override
 from utils.suid import normalize_conversation_id
 from utils.types import Responses
-from utils.vector_search import build_rag_context
 
 logger = get_logger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -241,6 +241,7 @@ async def _handle_query_with_tracing(
         responses_params,
         configuration.inference,
         configuration.compaction,
+        redact=request_redactor(configuration.shields, query_request.shield_ids),
         cache=configured_conversation_cache(),
         user_id=user_id,
         skip_user_id_check=_skip_userid_check,

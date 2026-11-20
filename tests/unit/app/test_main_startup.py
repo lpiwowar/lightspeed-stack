@@ -4,7 +4,7 @@ from collections.abc import Generator
 from pathlib import Path
 from typing import Any
 
-import httpx
+import httpx2
 import pytest
 import yaml
 from fastapi import FastAPI
@@ -46,7 +46,6 @@ def _write_config(tmp_path: Path, *, inference: dict[str, Any]) -> Path:
             "use_as_library_client": False,
             "url": "http://localhost:8321",
             "api_key": "xyzzy",
-            "allow_degraded_mode": True,
         },
         "user_data_collection": {"feedback_enabled": False},
         "mcp_servers": [],
@@ -155,9 +154,7 @@ async def test_lifespan_propagates_model_discovery_error(
         new=mocker.AsyncMock(
             side_effect=APIConnectionError(
                 message="connection failed",
-                request=httpx.Request(  # pyright: ignore[reportArgumentType]
-                    "GET", "https://example.test/v1/models"
-                ),
+                request=httpx2.Request("GET", "https://example.test/v1/models"),
             )
         ),
     )

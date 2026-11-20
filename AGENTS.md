@@ -221,7 +221,6 @@ src/
 │   ├── connection_decorator.py                   # Decorator that makes sure the object is 'connected' according to it's connected predicate
 │   ├── conversation_compaction.py                # Runtime integration of conversation compaction into the request flow
 │   ├── conversations.py                          # Utilities for conversations
-│   ├── degraded_mode.py                          # Degraded mode state tracking
 │   ├── endpoints.py                              # Utility functions for endpoint handlers
 │   ├── json_schema_updater.py                    # Function to transform a JSON Schema-like dictionary into an OpenAPI-compatible schema
 │   ├── ogx_version.py                            # Check if the OGX version is supported by the LCS
@@ -235,7 +234,9 @@ src/
 │   ├── pydantic_ai_helpers.py                    # Helpers for running Pydantic AI agents against OGX (Responses API compatibility)
 │   ├── query.py                                  # Utility functions for working with queries
 │   ├── quota_utils.py                            # Quota handling helper functions
-│   ├── reranker.py                               # Reranker utilities for RAG chunk reranking
+│   ├── rag/                                      # RAG utils
+│   │   ├── reranker.py                           # Reranker utilities for RAG chunk reranking 
+│   │   └── vector_search.py                      # Vector search utilities for query endpoints
 │   ├── responses.py                              # Utility functions for processing Responses API output
 │   ├── rh_identity.py                            # Utility functions for extracting RH Identity context for telemetry
 │   ├── shields.py                                # Utility functions for working with OGX shields
@@ -246,8 +247,7 @@ src/
 │   ├── token_estimator.py                        # Pre-LLM-call token estimation
 │   ├── tool_formatter.py                         # Utility functions for formatting and parsing MCP tool descriptions
 │   ├── transcripts.py                            # Transcript handling
-│   ├── types.py                                  # Common types for the project
-│   └── vector_search.py                          # Vector search utilities for query endpoints
+│   └── types.py                                  # Common types for the project
 ├── sentry.py                                     # Sentry error tracking initialization and configuration
 ├── lightspeed_stack.py                           # Entry point to the Lightspeed Core Stack REST API service
 ├── ogx_configuration.py                          # OGX configuration enrichment and synthesis

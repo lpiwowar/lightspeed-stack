@@ -4,7 +4,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Optional
 
-import httpx
+import httpx2
 import yaml
 from botocore.exceptions import ClientError
 from openai import APIConnectionError
@@ -97,7 +97,6 @@ def write_config(tmp_path: Path, *, inference: dict[str, Any]) -> Path:
             "use_as_library_client": False,
             "url": "http://localhost:8321",
             "api_key": "xyzzy",
-            "allow_degraded_mode": True,
         },
         "user_data_collection": {"feedback_enabled": False},
         "mcp_servers": [],
@@ -158,9 +157,7 @@ def openai_connection_error() -> APIConnectionError:
     """Return a realistic OpenAI transport failure from models.list."""
     return APIConnectionError(
         message="connection failed",
-        request=httpx.Request(  # pyright: ignore[reportArgumentType]
-            "GET", "https://api.openai.com/v1/models"
-        ),
+        request=httpx2.Request("GET", "https://api.openai.com/v1/models"),
     )
 
 
